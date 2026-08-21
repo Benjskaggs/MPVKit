@@ -26,7 +26,10 @@ https://github.com/mpvkit/MPVKit.git
 
 ### License
 
-MPVKit ships as a GPL build. See [FFmpeg details](https://github.com/FFmpeg/FFmpeg/blob/master/LICENSE.md) and [mpv details](https://github.com/mpv-player/mpv/blob/master/Copyright).
+On branch `cue-lgpl` this fork ships an **LGPL-2.1** build, not upstream's GPLv3 one.
+See [LICENSING.md](LICENSING.md) for what changed and why, plus
+[FFmpeg details](https://github.com/FFmpeg/FFmpeg/blob/master/LICENSE.md) and
+[mpv details](https://github.com/mpv-player/mpv/blob/master/Copyright).
 
 
 ## How to build
@@ -112,4 +115,8 @@ If you appreciate my current work, you can buy me a cup of coffee ☕️.
 
 ## License
 
-`MPVKit` bundles (`frameworks`, `xcframeworks`), which include both `libmpv` and `FFmpeg` libraries, are licensed under the GPL v3.0.
+On branch `cue-lgpl`, the `MPVKit` bundles (`frameworks`, `xcframeworks`) — which include
+both `libmpv` and `FFmpeg` — are **LGPL-2.1-or-later**. Branch `main` tracks upstream and
+is still GPL-3.0. This repository's own source remains LGPL-3.0 (see [`LICENSE`](LICENSE)).
+
+Full breakdown: [LICENSING.md](LICENSING.md).
