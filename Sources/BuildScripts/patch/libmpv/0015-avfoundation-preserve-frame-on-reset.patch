@@ -1,0 +1,22 @@
+diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
+index 004537a..717223b 100644
+--- a/video/out/vo_avfoundation.m
++++ b/video/out/vo_avfoundation.m
+@@ -3493,7 +3493,16 @@ static int control(struct vo *vo, uint32_t request, void *data)
+         reset_media_timing(p);
+         p->playback_paused = was_paused;
+         p->timebase_paused = was_paused;
+-        sample_buffer_renderer_flush(p->displayLayer, true);
++        // Preserve the displayed frame across a reset. VOCTRL_RESET fires on
++        // every seek — including the zero-length exact seek the host issues to
++        // re-time the ao/vo on a playback-speed change. Removing the image
++        // there blanks the layer to black for one refresh before the
++        // re-enqueued frames land (the "black flash" on speed toggles). A plain
++        // flush keeps the last frame on screen until the fresh one arrives, so
++        // a same-position seek is seamless. The image is still torn down for
++        // real in uninit. The OSD/subtitle layer is cleared as before so stale
++        // subtitles do not linger past the seek.
++        sample_buffer_renderer_flush(p->displayLayer, false);
+         sample_buffer_renderer_flush(p->osdLayer, true);
+         if (p->timebase) {
+             CMTimebaseSetTime(p->timebase, cm_time_from_ns(0));

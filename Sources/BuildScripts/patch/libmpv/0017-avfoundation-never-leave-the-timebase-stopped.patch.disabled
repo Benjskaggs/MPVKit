@@ -1,0 +1,53 @@
+diff --git a/video/out/vo_avfoundation.m b/video/out/vo_avfoundation.m
+index 717223b..f969afb 100644
+--- a/video/out/vo_avfoundation.m
++++ b/video/out/vo_avfoundation.m
+@@ -517,6 +517,30 @@ static void set_media_timebase_paused(struct vo *vo, bool paused)
+ 
+     p->timebase_paused = false;
+     p->timebase_anchor_valid = false;
++
++    // Restart the clock HERE rather than leaving it stopped until some later
++    // frame happens to be enqueued. Deferring deadlocks:
++    //
++    //   VOCTRL_RESET (every seek) leaves the rate at 0. A cache stall then
++    //   hands the VO frames that are already past due, so they are dropped at
++    //   the deadline -- and at rate 0 the layer never presents, therefore never
++    //   drains, therefore never reports ready again, so the frame that would
++    //   have restored the rate can never be enqueued.
++    //
++    // Symptom is the picture stopping dead while audio and subtitles run on,
++    // until a pause/play breaks the cycle. The anchor is deliberately left
++    // invalid so the next real frame still re-times against mpv's own
++    // schedule; this only guarantees the clock is never left stopped while
++    // playback is running.
++    double resume_rate = p->timebase_rate > 0.0 ? p->timebase_rate : 1.0;
++    CMTime resume_time = CMTimebaseGetTime(p->timebase);
++    if (!CMTIME_IS_NUMERIC(resume_time))
++        resume_time = cm_time_from_ns(current_media_time_ns(p));
++    OSStatus resume_err = CMTimebaseSetRateAndAnchorTime(
++        p->timebase, resume_rate, resume_time,
++        source_time_for_mp_time(p, mp_time_ns()));
++    if (resume_err != noErr)
++        MP_WARN(vo, "Failed to resume AVFoundation media timebase: %d\n", (int)resume_err);
+ }
+ 
+ static void sample_buffer_renderer_flush(AVSampleBufferDisplayLayer *displayLayer,
+@@ -3202,9 +3226,16 @@ static void flip_page(struct vo *vo)
+             wait_until_ready_for_more_media_data(vo, p->next_present_host_ns);
+         p->perf.wait_ns += mp_time_ns() - t;
+ 
+-        if (video_ready) {
++        // Anchor even when this frame is about to be dropped. The timebase is
++        // the only thing that makes the layer present -- and therefore release
++        // -- buffers, so gating the anchor on a successful enqueue is what lets
++        // a run of deadline drops strand the clock at rate 0, after which
++        // nothing drains and every later frame drops too. See the resume note
++        // in set_media_timebase_paused().
++        if (video_buf)
+             update_media_timebase_for_frame(vo);
+ 
++        if (video_ready) {
+             if (osd_buf) {
+                 t = mp_time_ns();
+                 osd_enqueued = enqueue_osd_sample(vo, osd_buf);

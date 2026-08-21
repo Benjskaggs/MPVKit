@@ -1,0 +1,59 @@
+diff --git a/audio/out/buffer.c b/audio/out/buffer.c
+index 277b524..f9e93aa 100644
+--- a/audio/out/buffer.c
++++ b/audio/out/buffer.c
+@@ -67,6 +67,14 @@ struct buffer_state {
+                                 // This field is only set in ao_set_paused(),
+                                 // and is considered as a temporary solution;
+                                 // DO NOT USE IT IN OTHER PLACES.
++    int64_t pause_time_ns;      // mp_time_ns() at which a pull AO was hw-paused,
++                                // or 0 when not hw-paused. end_time_ns is an
++                                // absolute wall-clock instant, so measuring the
++                                // remaining delay against a clock that keeps
++                                // running while the device is stopped reports
++                                // audio draining that never happened. Freezing
++                                // the reference here is what keeps ao_get_delay()
++                                // honest across a pause.
+ 
+     // "Push" AOs only (AOs with driver->write).
+     bool recover_pause;         // non-hw_paused: needs to recover delay
+@@ -305,7 +313,14 @@ double ao_get_delay(struct ao *ao)
+         driver_delay = state.delay;
+     } else {
+         int64_t end = p->end_time_ns;
+-        int64_t now = mp_time_ns();
++        // A hw-paused pull AO is stopped, not draining. Extrapolating on the
++        // wall clock here silently "plays" up to device_buffer seconds of audio
++        // that never left the device, which playing_audio_pts() then reports as
++        // real progress -- and once playback resumes the core corrects the
++        // phantom drift by dropping video. Bites hardest on a cache pause,
++        // where the core keeps running and comparing A/V while stopped.
++        int64_t now = p->hw_paused && p->pause_time_ns ? p->pause_time_ns
++                                                       : mp_time_ns();
+         driver_delay = MPMAX(0, MP_TIME_NS_TO_S(end - now));
+     }
+ 
+@@ -345,6 +360,7 @@ void ao_reset(struct ao *ao)
+     p->playing = false;
+     p->recover_pause = false;
+     p->hw_paused = false;
++    p->pause_time_ns = 0;
+     p->end_time_ns = 0;
+ 
+     mp_mutex_unlock(&p->lock);
+@@ -414,6 +430,7 @@ void ao_set_paused(struct ao *ao, bool paused, bool eof)
+                 do_change_state = true;
+                 p->streaming = false;
+                 is_hw_paused = p->hw_paused = !!ao->driver->set_pause;
++                p->pause_time_ns = p->hw_paused ? mp_time_ns() : 0;
+             }
+         }
+         wakeup = true;
+@@ -428,6 +445,7 @@ void ao_set_paused(struct ao *ao, bool paused, bool eof)
+             p->streaming = true;
+             is_hw_paused = p->hw_paused;
+             p->hw_paused = false;
++            p->pause_time_ns = 0;
+         }
+         wakeup = true;
+     }
