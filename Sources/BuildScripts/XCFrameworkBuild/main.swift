@@ -386,16 +386,13 @@ private class BuildMPV: BaseBuild {
             "-Dvapoursynth=disabled",
             "-Drubberband=disabled",
         ]
-        array.append("-Dgpl=true")
-        let blurayLibPath =
-            URL.currentDirectory + [
-                Library.libbluray.rawValue, platform.rawValue, "thin", arch.rawValue,
-            ]
-        if FileManager.default.fileExists(atPath: blurayLibPath.path) {
-            array.append("-Dlibbluray=enabled")
-        } else {
-            array.append("-Dlibbluray=disabled")
-        }
+        array.append("-Dgpl=false")
+        // libbluray is off unconditionally. Cue streams files from a Plex
+        // server and never reads BD-ROM disc structures, so it was dead weight
+        // — and dropping it also drops the libaacs/libbdplus question and one
+        // more attribution obligation. The old code enabled it whenever a
+        // prebuilt slice happened to be on disk.
+        array.append("-Dlibbluray=disabled")
         if !(platform == .macos && arch.executable) {
             array.append("-Dcplayer=false")
         }
@@ -551,7 +548,8 @@ private class BuildFFMPEG: BaseBuild {
             arguments.append("--enable-stripping")
             arguments.append("--enable-optimizations")
         }
-        arguments.append("--enable-gpl")
+        // LGPL: no GPL-only FFmpeg component is used by Cue, and --enable-gpl
+        // would force the whole build to GPL. See Docs/gpl-remediation-plan.md.
         // arguments += Build.ffmpegConfiguers
         arguments.append("--disable-large-tests")
         arguments.append("--ignore-tests=TESTS")
@@ -627,7 +625,7 @@ private class BuildFFMPEG: BaseBuild {
         "--disable-shared", "--disable-small", "--disable-symver", "--disable-xlib",
         "--enable-cross-compile", "--enable-libxml2",
         "--enable-optimizations", "--enable-pic", "--enable-runtime-cpudetect", "--enable-static",
-        "--enable-thumb", "--enable-version3",
+        "--enable-thumb",
         "--pkg-config-flags=--static",
         // Documentation options:
         "--disable-doc", "--disable-htmlpages", "--disable-manpages", "--disable-podpages",
@@ -635,7 +633,7 @@ private class BuildFFMPEG: BaseBuild {
         // Component options:
         "--enable-avcodec", "--enable-avformat", "--enable-avutil", "--enable-network",
         "--enable-swresample", "--enable-swscale",
-        "--disable-securetransport", "--disable-gnutls",
+        "--enable-securetransport", "--disable-openssl", "--disable-gnutls",
         "--disable-libtls", "--disable-mbedtls",
         "--disable-devices", "--disable-outdevs", "--disable-indevs",
         // ,"--disable-pthreads"
@@ -673,7 +671,7 @@ private class BuildFFMPEG: BaseBuild {
         "--enable-filter=aresample",
         "--enable-filter=areverse", "--enable-filter=asetrate", "--enable-filter=atempo",
         "--enable-filter=atrim",
-        "--enable-filter=bwdif", "--enable-filter=delogo",
+        "--enable-filter=bwdif",
         "--enable-filter=equalizer", "--enable-filter=estdif",
         "--enable-filter=firequalizer", "--enable-filter=format", "--enable-filter=fps",
         "--enable-filter=hflip", "--enable-filter=hwdownload", "--enable-filter=hwmap",
