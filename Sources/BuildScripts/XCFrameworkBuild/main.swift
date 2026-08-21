@@ -581,9 +581,15 @@ private class BuildFFMPEG: BaseBuild {
         //        if platform == .isimulator || platform == .tvsimulator {
         //            arguments.append("--assert-level=1")
         //        }
+        // `.openssl` is deliberately absent. This loop appends `--enable-<lib>`
+        // for anything present on disk, and it runs AFTER `ffmpegConfiguers` —
+        // which carries `--disable-openssl`. FFmpeg's configure takes the LAST
+        // flag, so leaving `.openssl` here silently re-enabled it on every
+        // rebuild and undid the LGPL relicensing with no visible symptom other
+        // than the licence string in the binary. See Docs/gpl-remediation-plan.md.
         let dependencyLibrary = [
             Library.libfreetype, .libharfbuzz, .libfribidi, .libass, .vulkan,
-            .libshaderc, .lcms2, .libplacebo, .libdav1d, .libuavs3d, .openssl,
+            .libshaderc, .lcms2, .libplacebo, .libdav1d, .libuavs3d,
         ]
         for library in dependencyLibrary {
             let path =
