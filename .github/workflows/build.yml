@@ -100,7 +100,11 @@ jobs:
 
       - name: Build GPL version (${{ matrix.name }})
         run: |
-          make build enable-gpl platform=${{ matrix.platforms }} version=${{ needs.metadata.outputs.release_version }}
+          # NOTE: upstream passed `enable-gpl` here. On this branch the build is
+          # LGPL-2.1 (see LICENSING.md), so it is removed. The target is a
+          # recipe-less .PHONY upstream and does nothing today - but if it ever
+          # gains a body, a merge would silently re-enable GPL. Do not restore it.
+          make build platform=${{ matrix.platforms }} version=${{ needs.metadata.outputs.release_version }}
 
       - name: Upload platform build (${{ matrix.name }})
         uses: actions/upload-artifact@v4

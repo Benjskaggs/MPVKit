@@ -69,7 +69,11 @@ jobs:
 
       - name: Build GPL version
         run: |
-          make build enable-gpl version=${{ env.RELEASE_VERSION }} platform=maccatalyst,ios,macos
+          # NOTE: upstream passed `enable-gpl` here. On this branch the build is
+          # LGPL-2.1 (see LICENSING.md), so it is removed. The target is a
+          # recipe-less .PHONY upstream and does nothing today - but if it ever
+          # gains a body, a merge would silently re-enable GPL. Do not restore it.
+          make build version=${{ env.RELEASE_VERSION }} platform=maccatalyst,ios,macos
 
           cd ./dist/release
           rename 's/-all\.zip/-GPL-all\.zip/' *-all.zip
