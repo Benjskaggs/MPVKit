@@ -4,7 +4,7 @@ This fork exists for two reasons: to build the mpv/FFmpeg stack as **LGPL-2.1**
 rather than GPLv3, and to publish the modifications this build makes to mpv — which
 the LGPL requires of anyone who distributes a modified version.
 
-It is used by [Cue](https://github.com/Benjskaggs/Cue), a closed-source Plex client
+It is used by Cue, a closed-source Plex client
 for iPhone, iPad and Apple TV. Publishing this repository does not make that app open
 source, and is not meant to: LGPL covers the *library*, not the application that links
 it. That distinction is the entire reason for the relicensing work below.
