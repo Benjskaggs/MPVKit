@@ -53,6 +53,15 @@ enum MergeMPVKit {
         (.openssl, "libssl.a"),
     ]
 
+    /// The floor the merged framework is linked against and declares, kept
+    /// deliberately separate from `PlatformType.minVersion` (14.0), which is what
+    /// the individual static archives are compiled for and is upstream's
+    /// compatibility target. Linking those older objects into a newer dylib is
+    /// fine; the reverse would warn. Change this one constant to move the
+    /// framework's floor -- it feeds both the link target triple and
+    /// Info.plist's MinimumOSVersion, which must agree.
+    static let deploymentTarget = "26.0"
+
     /// tvOS is arm64-only, no arm64e. The per-arch crate-disambiguator hazard
     /// that made this necessary is gone now that consumers link no static
     /// libdovi, but arm64 and arm64e share a cputype -- so on arm64e hardware
@@ -213,15 +222,24 @@ enum MergeMPVKit {
         try Utility.launch(path: "/usr/bin/xcrun", arguments: arguments)
     }
 
-    /// `PlatformType.deploymentTarget` omits the version for Catalyst, which
-    /// clang will not accept when it is the whole `-target`. Everything else
-    /// uses the same triple the per-library builds did, so the dylib and the
-    /// archives it swallows agree on a deployment target.
+    /// Built from `deploymentTarget` rather than `PlatformType.deploymentTarget`,
+    /// which would pin the dylib to the archives' 14.0 floor.
     private static func targetTriple(platform: PlatformType, arch: ArchType) -> String {
-        if platform == .maccatalyst {
-            return "\(arch.targetCpu)-apple-ios\(PlatformType.ios.minVersion)-macabi"
+        let cpu = arch.targetCpu
+        switch platform {
+        case .ios:
+            return "\(cpu)-apple-ios\(deploymentTarget)"
+        case .isimulator:
+            return "\(cpu)-apple-ios\(deploymentTarget)-simulator"
+        case .tvos:
+            return "\(cpu)-apple-tvos\(deploymentTarget)"
+        case .tvsimulator:
+            return "\(cpu)-apple-tvos\(deploymentTarget)-simulator"
+        case .maccatalyst:
+            return "\(cpu)-apple-ios\(deploymentTarget)-macabi"
+        default:
+            return platform.deploymentTarget(arch)
         }
-        return platform.deploymentTarget(arch)
     }
 
     // MARK: - framework assembly
@@ -295,7 +313,7 @@ enum MergeMPVKit {
         try modulemap.write(to: modules + "module.modulemap", atomically: true, encoding: .utf8)
 
         let version = BaseBuild.options.releaseVersion
-        let minimumOS = platform == .maccatalyst ? PlatformType.ios.minVersion : platform.minVersion
+        let minimumOS = deploymentTarget
         let infoPlist = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
