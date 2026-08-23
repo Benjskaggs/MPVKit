@@ -15,7 +15,29 @@ let package = Package(
         .target(
             name: "_MPVKit",
             dependencies: [
-                "Libmpv", "_FFmpeg", "Libuchardet", "Libbluray",
+                // Libmpv, the 7 FFmpeg libraries, Libuchardet and everything
+                // _FFmpeg used to list are all inside one dynamic
+                // MPVKit.xcframework now -- see the root Package.swift for the
+                // full account. Depending on them separately as well made every
+                // consumer link a second, static copy of each on top of the dylib
+                // that already contained them, which is how libdovi's Rust
+                // symbols ended up binding across images and crashing arm64e
+                // Apple TV hardware at launch.
+                //
+                // Libbluray is gone for a different reason: mpv is built
+                // -Dlibbluray=disabled, so nothing referenced it.
+                //
+                // NOTE: MPVKit_dynamic must be emitted into the AUTO_GENERATE
+                // region below as a binaryTarget pointing at the merged
+                // MPVKit.xcframework.zip. Sources/BuildScripts does not produce
+                // that framework yet -- the merge step lives in Cue's
+                // Scripts/mpvkit-link-dynamic.sh, which consumes this build's
+                // dist/ tree. Until it is wired into the release pipeline and
+                // Library.targets emits MPVKit_dynamic (and stops emitting the
+                // merged-away libraries), a generated release/Package.swift will
+                // fail to resolve rather than silently reintroducing the
+                // duplication.
+                "MPVKit_dynamic", "_FFmpeg",
                 .target(name: "Libluajit", condition: .when(platforms: [.macOS])),
             ],
             path: "Sources/_MPVKit",
@@ -33,12 +55,9 @@ let package = Package(
         ),
         .target(
             name: "_FFmpeg",
-            dependencies: [
-                "Libavcodec", "Libavdevice", "Libavfilter", "Libavformat", "Libavutil", "Libswresample", "Libswscale",
-                "Libssl", "Libcrypto", "Libass", "Libfreetype", "Libfribidi", "Libharfbuzz",
-                "MoltenVK", "Libshaderc_combined", "lcms2", "Libplacebo", "Libdovi", "Libunibreak",
-                "Libdav1d", "Libuavs3d"
-            ],
+            // Empty: every library that used to be listed here is inside
+            // MPVKit_dynamic. The target survives for its linkerSettings below.
+            dependencies: [],
             path: "Sources/_FFmpeg",
             linkerSettings: [
                 .linkedFramework("AudioToolbox"),
