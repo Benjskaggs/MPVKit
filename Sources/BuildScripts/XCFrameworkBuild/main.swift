@@ -11,9 +11,6 @@ do {
     try BuildHarfbuzz().buildALL()
     try BuildASS().buildALL()
 
-    // libbluray
-    try BuildBluray().buildALL()
-
     // ffmpeg
     try BuildOpenSSL().buildALL()
     try BuildUavs3d().buildALL()
@@ -29,6 +26,11 @@ do {
     try BuildUchardet().buildALL()
     try BuildLuaJIT().buildALL()
     try BuildMPV().buildALL()
+
+    // Everything above produced static archives. Fuse them into one dynamic
+    // MPVKit.xcframework, which is the only thing the package vends -- see
+    // merge.swift for why that must be the *only* thing.
+    try MergeMPVKit.run()
 } catch {
     print(error.localizedDescription)
     exit(1)
@@ -135,209 +137,22 @@ enum Library: String, CaseIterable {
     }
 
     // for generate Package.swift
+    //
+    // Everything that MergeMPVKit fuses into MPVKit.xcframework returns no
+    // targets: it is inside the dylib, and declaring a binaryTarget for it as
+    // well is what produced the duplicate static links this package used to
+    // ship. Note SwiftPM downloads a binaryTarget whenever the package
+    // resolves, whether or not any target depends on it, so a declaration left
+    // behind is not free even when nothing references it.
+    //
+    // MPVKit_dynamic is not listed here because it is not one library's
+    // artifact -- MergeMPVKit appends it to the generated manifest itself,
+    // after the merged xcframework exists.
     var targets: [PackageTarget] {
         switch self {
-        case .libmpv:
-            return [
-                .target(
-                    name: "Libmpv",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libmpv.xcframework.zip",
-                    checksum: ""
-                )
-            ]
-        case .FFmpeg:
-            return [
-                .target(
-                    name: "Libavcodec",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libavcodec.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libavdevice",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libavdevice.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libavformat",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libavformat.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libavfilter",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libavfilter.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libavutil",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libavutil.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libswresample",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libswresample.xcframework.zip",
-                    checksum: ""
-                ),
-                .target(
-                    name: "Libswscale",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libswscale.xcframework.zip",
-                    checksum: ""
-                ),
-            ]
-        case .openssl:
-            return [
-                .target(
-                    name: "Libcrypto",
-                    url:
-                        "https://github.com/mpvkit/openssl-build/releases/download/\(self.version)/Libcrypto.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/openssl-build/releases/download/\(self.version)/Libcrypto.xcframework.checksum.txt"
-                ),
-                .target(
-                    name: "Libssl",
-                    url:
-                        "https://github.com/mpvkit/openssl-build/releases/download/\(self.version)/Libssl.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/openssl-build/releases/download/\(self.version)/Libssl.xcframework.checksum.txt"
-                ),
-            ]
-        case .libass:
-            return [
-                .target(
-                    name: "Libass",
-                    url:
-                        "https://github.com/edde746/MPVKit/releases/download/\(BaseBuild.options.releaseVersion)/Libass.xcframework.zip",
-                    checksum: ""
-                )
-            ]
-        case .libunibreak:
-            return [
-                .target(
-                    name: "Libunibreak",
-                    url:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libunibreak.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libunibreak.xcframework.checksum.txt"
-                )
-            ]
-        case .libfreetype:
-            return [
-                .target(
-                    name: "Libfreetype",
-                    url:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libfreetype.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libfreetype.xcframework.checksum.txt"
-                )
-            ]
-        case .libfribidi:
-            return [
-                .target(
-                    name: "Libfribidi",
-                    url:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libfribidi.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libfribidi.xcframework.checksum.txt"
-                )
-            ]
-        case .libharfbuzz:
-            return [
-                .target(
-                    name: "Libharfbuzz",
-                    url:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libharfbuzz.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libass-build/releases/download/\(self.version)/Libharfbuzz.xcframework.checksum.txt"
-                )
-            ]
-        case .lcms2:
-            return [
-                .target(
-                    name: "lcms2",
-                    url:
-                        "https://github.com/mpvkit/lcms2-build/releases/download/\(self.version)/lcms2.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/lcms2-build/releases/download/\(self.version)/lcms2.xcframework.checksum.txt"
-                )
-            ]
-        case .libplacebo:
-            return [
-                .target(
-                    name: "Libplacebo",
-                    url:
-                        "https://github.com/mpvkit/libplacebo-build/releases/download/\(self.version)/Libplacebo.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libplacebo-build/releases/download/\(self.version)/Libplacebo.xcframework.checksum.txt"
-                )
-            ]
-        case .libdav1d:
-            return [
-                .target(
-                    name: "Libdav1d",
-                    url:
-                        "https://github.com/edde746/libdav1d-build/releases/download/\(self.version)/Libdav1d.xcframework.zip",
-                    checksum:
-                        "https://github.com/edde746/libdav1d-build/releases/download/\(self.version)/Libdav1d.xcframework.checksum.txt"
-                )
-            ]
-        case .libdovi:
-            return [
-                .target(
-                    name: "Libdovi",
-                    url:
-                        "https://github.com/mpvkit/libdovi-build/releases/download/\(self.version)/Libdovi.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libdovi-build/releases/download/\(self.version)/Libdovi.xcframework.checksum.txt"
-                )
-            ]
-        case .vulkan:
-            return [
-                .target(
-                    name: "MoltenVK",
-                    url:
-                        "https://github.com/mpvkit/moltenvk-build/releases/download/\(self.version)/MoltenVK.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/moltenvk-build/releases/download/\(self.version)/MoltenVK.xcframework.checksum.txt"
-                )
-            ]
-        case .libshaderc:
-            return [
-                .target(
-                    name: "Libshaderc_combined",
-                    url:
-                        "https://github.com/mpvkit/libshaderc-build/releases/download/\(self.version)/Libshaderc_combined.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libshaderc-build/releases/download/\(self.version)/Libshaderc_combined.xcframework.checksum.txt"
-                )
-            ]
-        case .libuchardet:
-            return [
-                .target(
-                    name: "Libuchardet",
-                    url:
-                        "https://github.com/mpvkit/libuchardet-build/releases/download/\(self.version)/Libuchardet.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libuchardet-build/releases/download/\(self.version)/Libuchardet.xcframework.checksum.txt"
-                )
-            ]
-        case .libbluray:
-            return [
-                .target(
-                    name: "Libbluray",
-                    url:
-                        "https://github.com/mpvkit/libbluray-build/releases/download/\(self.version)/Libbluray.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libbluray-build/releases/download/\(self.version)/Libbluray.xcframework.checksum.txt"
-                )
-            ]
         case .libluajit:
+            // Not merged: macOS-only, and mpv loads it for scripting rather
+            // than linking it into the shared build.
             return [
                 .target(
                     name: "Libluajit",
@@ -347,16 +162,14 @@ enum Library: String, CaseIterable {
                         "https://github.com/mpvkit/libluajit-build/releases/download/\(self.version)/Libluajit.xcframework.checksum.txt"
                 )
             ]
-        case .libuavs3d:
-            return [
-                .target(
-                    name: "Libuavs3d",
-                    url:
-                        "https://github.com/mpvkit/libuavs3d-build/releases/download/\(self.version)/Libuavs3d.xcframework.zip",
-                    checksum:
-                        "https://github.com/mpvkit/libuavs3d-build/releases/download/\(self.version)/Libuavs3d.xcframework.checksum.txt"
-                )
-            ]
+        case .libmpv, .FFmpeg, .openssl, .libass, .libunibreak, .libfreetype, .libfribidi,
+            .libharfbuzz, .libplacebo, .libdav1d, .libuchardet, .libdovi, .lcms2, .libshaderc,
+            .vulkan, .libuavs3d:
+            return []
+        case .libbluray:
+            // Dropped from the recipe entirely: mpv is built -Dlibbluray=disabled
+            // and FFmpeg never referenced it, so nothing links it.
+            return []
         }
     }
 }

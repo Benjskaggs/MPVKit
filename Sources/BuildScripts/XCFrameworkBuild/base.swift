@@ -611,10 +611,10 @@ class BaseBuild {
         let crossFile = url + "crossFile.meson"
         let prefix = thinDir(platform: platform, arch: arch)
         let cFlags = cFlags(platform: platform, arch: arch).map {
-            "'" + $0 + "'"
+            Utility.mesonQuote($0)
         }.joined(separator: ", ")
         let ldFlags = ldFlags(platform: platform, arch: arch).map {
-            "'" + $0 + "'"
+            Utility.mesonQuote($0)
         }.joined(separator: ", ")
         let content = """
         [binaries]
@@ -622,8 +622,8 @@ class BaseBuild {
         cpp = '/usr/bin/clang++'
         objc = '/usr/bin/clang'
         objcpp = '/usr/bin/clang++'
-        ar = '\(platform.xcrunFind(tool: "ar"))'
-        strip = '\(platform.xcrunFind(tool: "strip"))'
+        ar = \(Utility.mesonQuote(platform.xcrunFind(tool: "ar")))
+        strip = \(Utility.mesonQuote(platform.xcrunFind(tool: "strip")))
         pkg-config = 'pkg-config'
 
         [properties]
@@ -641,7 +641,7 @@ class BaseBuild {
         [built-in options]
         default_library = 'static'
         buildtype = 'release'
-        prefix = '\(prefix.path)'
+        prefix = \(Utility.mesonQuote(prefix.path))
         c_args = [\(cFlags)]
         cpp_args = [\(cFlags)]
         objc_args = [\(cFlags)]
@@ -720,7 +720,7 @@ class BaseBuild {
             let zipFile = releaseDirPath + [framework + ".xcframework.zip"]
             let checksumFile = releaseDirPath + [framework + ".xcframework.checksum.txt"]
             try Utility.launch(path: "/usr/bin/zip", arguments: ["-qry", zipFile.path, XCFrameworkFile], currentDirectoryURL: self.xcframeworkDirectoryURL)
-            Utility.shell("swift package compute-checksum \(zipFile.path) > \(checksumFile.path)")
+            Utility.shell("swift package compute-checksum \(Utility.shellQuote(zipFile.path)) > \(Utility.shellQuote(checksumFile.path))")
 
             if BaseBuild.options.enableSplitPlatform {
                 for group in BaseBuild.splitPlatformGroups.keys {
@@ -736,7 +736,7 @@ class BaseBuild {
                         let zipFile = releaseDirPath + [XCFrameworkName + ".xcframework.zip"]
                         let checksumFile = releaseDirPath + [XCFrameworkName + ".xcframework.checksum.txt"]
                         try Utility.launch(path: "/usr/bin/zip", arguments: ["-qry", zipFile.path, XCFrameworkFile], currentDirectoryURL: self.xcframeworkDirectoryURL)
-                        Utility.shell("swift package compute-checksum \(zipFile.path) > \(checksumFile.path)")
+                        Utility.shell("swift package compute-checksum \(Utility.shellQuote(zipFile.path)) > \(Utility.shellQuote(checksumFile.path))")
                     }
                 }
             }
@@ -1300,6 +1300,25 @@ enum ArchType: String, CaseIterable {
 
 
 enum Utility {
+    /// Wrap a value for safe interpolation into a /bin/bash command line. Paths
+    /// here routinely contain spaces, and a checkout under a directory such as
+    /// "Ben's Drive" also contains an apostrophe, which silently truncated every
+    /// unquoted command it appeared in.
+    static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Wrap a value for a meson machine file. Meson does NOT process backslash
+    /// escapes inside a single quoted string -- `Ben\'s` comes back out as a
+    /// literal backslash followed by a string terminator -- so a value containing
+    /// an apostrophe can only be expressed as a triple quoted (raw) string.
+    static func mesonQuote(_ value: String) -> String {
+        if value.contains("'") {
+            return "\'\'\'" + value + "\'\'\'"
+        }
+        return "'" + value + "'"
+    }
+
     @discardableResult
     static func shell(_ command: String, isOutput : Bool = false, currentDirectoryURL: URL? = nil, environment: [String: String] = [:]) -> String? {
         do {
@@ -1330,6 +1349,13 @@ enum Utility {
         // for homebrew 1.12
         if ProcessInfo.processInfo.environment.keys.contains("HOME") {
             environment["HOME"] = ProcessInfo.processInfo.environment["HOME"]
+        }
+        // Every child gets a scrubbed environment, so an Xcode selected with
+        // DEVELOPER_DIR rather than `xcode-select -s` was invisible to xcrun and
+        // every SDK lookup fell back to the CommandLineTools instance.
+        if !environment.keys.contains("DEVELOPER_DIR"),
+            let developerDir = ProcessInfo.processInfo.environment["DEVELOPER_DIR"] {
+            environment["DEVELOPER_DIR"] = developerDir
         }
         if !environment.keys.contains("PATH") {
             environment["PATH"] = BaseBuild.defaultPath
@@ -1436,7 +1462,7 @@ enum Utility {
                                 let errPath = "\(firstMatch[1].value ?? "")"
                                 if !errPath.isEmpty {
                                     print("############# \(errPath) CONTENT BEGIN #############")
-                                    let content = Utility.shell("cat \(errPath)", isOutput: true)
+                                    let content = Utility.shell("cat \(Utility.shellQuote(errPath))", isOutput: true)
                                     print(content ?? "")
                                     print("#############  \(errPath) CONTENT END #############")
                                 }
