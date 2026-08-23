@@ -15,7 +15,23 @@ let package = Package(
         .target(
             name: "_MPVKit",
             dependencies: [
-                "Libmpv", "_FFmpeg", "Libuchardet", "Libbluray",
+                // Libbluray removed 2026-08-21: mpv is built -Dlibbluray=disabled,
+                // so nothing references it (0 undefined bd_* symbols, was 24), and an
+                // iPhone/Apple TV has no optical drive. It is also LGPL-2.1+, so
+                // keeping a dead dependency would drag a relinking obligation into
+                // the dynamic-framework work for no benefit.
+                // DYNAMIC MERGE 2026-08-21: Libmpv + the 7 FFmpeg frameworks are now a
+                // single dynamic MPVKit.xcframework. Five linked libraries are LGPL
+                // (FFmpeg, mpv, libplacebo, libfribidi, libuchardet); one dynamic
+                // binary satisfies LGPLv2.1 relinking for all of them at once, which
+                // static archives could not.
+                // Libuchardet removed 2026-08-23 for the same reason as _FFmpeg's
+                // list below: it is inside MPVKit_dynamic, which exports its whole
+                // public API (uchardet_new/_delete/_handle_data/_data_end/_reset/
+                // _get_charset) on every slice. As a separate dependency it
+                // contributed no objects to consumers and existed only to make
+                // Xcode embed a second, empty stub framework in the app bundle.
+                "MPVKit_dynamic", "_FFmpeg",
                 .target(name: "Libluajit", condition: .when(platforms: [.macOS])),
             ],
             path: "Sources/_MPVKit",
@@ -33,12 +49,34 @@ let package = Package(
         ),
         .target(
             name: "_FFmpeg",
-            dependencies: [
-                "Libavcodec", "Libavdevice", "Libavfilter", "Libavformat", "Libavutil", "Libswresample", "Libswscale",
-                "Libssl", "Libcrypto", "Libass", "Libfreetype", "Libfribidi", "Libharfbuzz",
-                "MoltenVK", "Libshaderc_combined", "lcms2", "Libplacebo", "Libdovi", "Libunibreak",
-                "Libdav1d", "Libuavs3d"
-            ],
+            // Empty since 2026-08-23. The 7 FFmpeg frameworks merged into
+            // MPVKit_dynamic (see _MPVKit above), and so did every library that
+            // used to be listed here: Libssl, Libcrypto, Libass, Libfreetype,
+            // Libfribidi, Libharfbuzz, MoltenVK, Libshaderc_combined, lcms2,
+            // Libplacebo, Libdovi, Libunibreak, Libdav1d, Libuavs3d. Keeping them
+            // as dependencies put a second, static copy of each on every
+            // consumer's link line on top of the dylib that already contains them.
+            //
+            // That was not merely wasteful. MPVKit.framework exports
+            // ___isPlatformVersionAtLeast weakly, and ld loads a static archive
+            // member that strongly defines a weak dylib export -- so libdovi's
+            // Rust std object got pulled in unbidden, dragging 16 more CGUs and
+            // 1046 symbols, and Libshaderc_combined leaked 2 glslang objects the
+            // same way via std::length_error / std::out_of_range typeinfo. The
+            // resulting Rust symbols had to bind back across images to
+            // MPVKit.framework, and since libdovi is compiled per-arch each slice
+            // carries its own crate disambiguator: on arm64e Apple TV hardware
+            // dyld picked MPVKit's arm64e slice for an arm64 process and the app
+            // died at launch on a missing __RNv...core3net11socket_addr symbol.
+            // Cue/Scripts/mpvkit-link-dynamic.sh works around the symptom by
+            // shipping tvOS as arm64-only; this removes the cause.
+            //
+            // Nothing needs them: the merged dylib has zero undefined symbols not
+            // satisfied by a system framework, it exports every library's public
+            // API, and it ships headers for FFmpeg and mpv only, so a consumer
+            // cannot reference the rest. The target survives for its
+            // linkerSettings below.
+            dependencies: [],
             path: "Sources/_FFmpeg",
             linkerSettings: [
                 .linkedFramework("AudioToolbox"),
@@ -60,135 +98,38 @@ let package = Package(
 
         //AUTO_GENERATE_TARGETS_BEGIN//
 
-        .binaryTarget(
-            name: "Libunibreak",
-            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.4/Libunibreak.xcframework.zip",
-            checksum: "001087c0e927ae00f604422b539898b81eb77230ea7700597b70393cd51e946c"
-        ),
+        // Removed 2026-08-23 along with _FFmpeg's dependency list: Libass,
+        // Libcrypto, Libdav1d, Libdovi, Libfreetype, Libfribidi, Libharfbuzz,
+        // Libplacebo, Libshaderc_combined, Libssl, Libuavs3d, Libunibreak, lcms2,
+        // MoltenVK -- and Libuchardet, which hung off _MPVKit rather than
+        // _FFmpeg. All fifteen are inside MPVKit_dynamic already. A
+        // binaryTarget is downloaded whenever the package resolves, whether or
+        // not any target depends on it, so leaving the declarations behind would
+        // have kept fetching fourteen xcframework zips for nothing. Their URLs
+        // and checksums are in git history if the xcframework is ever rebuilt --
+        // Sources/BuildScripts still knows how to produce them.
+        //
+        // MPVKit_dynamic and Libluajit are all that is left. The pre-merge
+        // Libav*/Libsw*/Libmpv xcframeworks and Frameworks/Libuavs3d.xcframework
+        // were deleted from Frameworks/ at the same time; `make build` recreates
+        // them, and Frameworks/ is .gitignore'd, so nothing tracked was lost.
 
+        // ONE dynamic framework replacing Libmpv + the 7 FFmpeg xcframeworks.
+        // Also links libass, libplacebo, libfribidi, libfreetype, libharfbuzz,
+        // libunibreak, libuchardet, libdav1d, libuavs3d, libdovi, lcms2, shaderc,
+        // MoltenVK and OpenSSL into the same dylib, one per slice.
+        //
+        // Headers keep FFmpeg's natural include/libavutil/... layout, and their
+        // cross-includes are rewritten to ../libavutil/... at package time. In the
+        // old per-library setup `#include "libavutil/x.h"` resolved only because a
+        // separate Libavutil.framework happened to sit on the framework search path
+        // (Clang's Foo/bar.h -> Foo.framework mapping, case-insensitive on APFS).
+        // Merging removed that crutch, so directory layout does the work now.
+        //
+        // Consumers `import MPVKit` instead of Libavutil/Libavcodec/Libavformat/Libmpv.
         .binaryTarget(
-            name: "Libfreetype",
-            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.4/Libfreetype.xcframework.zip",
-            checksum: "f2840aba1ce35e51c0595557eee82c908dac8e32108ecc0661301c06061e051c"
-        ),
-
-        .binaryTarget(
-            name: "Libfribidi",
-            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.4/Libfribidi.xcframework.zip",
-            checksum: "4a55513792ef7a17893875f74cc84c56f3657e8768c07a7a96f563a11dc4b743"
-        ),
-
-        .binaryTarget(
-            name: "Libharfbuzz",
-            url: "https://github.com/mpvkit/libass-build/releases/download/0.17.4/Libharfbuzz.xcframework.zip",
-            checksum: "91558d8497d9d97bc11eeef8b744d104315893bfee8f17483d8002e14565f84b"
-        ),
-
-        .binaryTarget(
-            name: "Libass",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libass.xcframework.zip",
-            checksum: "318b1688df2971ee4d66b5ec22d1437ead0814f569014ff5089700073551a5f5"
-        ),
-
-        .binaryTarget(
-            name: "Libbluray",
-            url: "https://github.com/mpvkit/libbluray-build/releases/download/1.4.0/Libbluray.xcframework.zip",
-            checksum: "bc037d34e2b0b5ab7f202fb371f5fb298136cc66fdf406c2172185d06f53f18d"
-        ),
-
-        .binaryTarget(
-            name: "Libcrypto",
-            url: "https://github.com/mpvkit/openssl-build/releases/download/3.3.5/Libcrypto.xcframework.zip",
-            checksum: "593283be2a90f7fd66f6e6ed331b2f099cf403e0926fe3b4ac09a7062b793965"
-        ),
-        .binaryTarget(
-            name: "Libssl",
-            url: "https://github.com/mpvkit/openssl-build/releases/download/3.3.5/Libssl.xcframework.zip",
-            checksum: "ff5ffd43d015d7285fd37e4a3145b25cbd8d2842740bd629a711c299a20e226a"
-        ),
-
-        .binaryTarget(
-            name: "Libuavs3d",
-            url: "https://github.com/mpvkit/libuavs3d-build/releases/download/1.2.1-xcode/Libuavs3d.xcframework.zip",
-            checksum: "1e69250279be9334cd2f6849abdc884c8e4bb29212467b6f071fdc1ac2010b6b"
-        ),
-
-        .binaryTarget(
-            name: "Libdovi",
-            url: "https://github.com/mpvkit/libdovi-build/releases/download/3.3.2/Libdovi.xcframework.zip",
-            checksum: "e693e239808350868e79c5448ef9f02e2716bc822dd8632a41a368a1eae5ca7d"
-        ),
-
-        .binaryTarget(
-            name: "MoltenVK",
-            url: "https://github.com/mpvkit/moltenvk-build/releases/download/1.4.1/MoltenVK.xcframework.zip",
-            checksum: "9bd1ca1e4563bacd25d6e55d37b10341d50b2601bc2684bc332188e79daa2b79"
-        ),
-
-        .binaryTarget(
-            name: "Libshaderc_combined",
-            url: "https://github.com/mpvkit/libshaderc-build/releases/download/2025.5.0/Libshaderc_combined.xcframework.zip",
-            checksum: "758047b615708575b580eb960a2d083f760a29dc462d6eaa360416c946ce433b"
-        ),
-
-        .binaryTarget(
-            name: "lcms2",
-            url: "https://github.com/mpvkit/lcms2-build/releases/download/2.17.0/lcms2.xcframework.zip",
-            checksum: "dc0dce0606f6ab6841a8ec5a6bd4448e2f3ef00661a050460f806c9393dc6982"
-        ),
-
-        .binaryTarget(
-            name: "Libplacebo",
-            url: "https://github.com/mpvkit/libplacebo-build/releases/download/7.351.0-2512/Libplacebo.xcframework.zip",
-            checksum: "3b2bd57b82549566963effadf0891a141448d9f89c7d48fca0b8f823b854bac6"
-        ),
-
-        .binaryTarget(
-            name: "Libdav1d",
-            url: "https://github.com/edde746/libdav1d-build/releases/download/1.5.3-neon/Libdav1d.xcframework.zip",
-            checksum: "7965ecf274af5448fa830bc1fec4e78257cf1d7509ed1cd95e32023b7bdff965"
-        ),
-
-        .binaryTarget(
-            name: "Libavcodec",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libavcodec.xcframework.zip",
-            checksum: "f93ec422dc9fa73d2b82c2df2ff56fe3e00cf890895cf8f063e694966f4afa46"
-        ),
-        .binaryTarget(
-            name: "Libavdevice",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libavdevice.xcframework.zip",
-            checksum: "a87cecde2a13da06fa6ff4836f5f212e6661817455b029d74bf4b10a071f648c"
-        ),
-        .binaryTarget(
-            name: "Libavformat",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libavformat.xcframework.zip",
-            checksum: "7ff7bee4108f3acd99528c7e4d6b1f4556f95952c3bd0b452433d51095819180"
-        ),
-        .binaryTarget(
-            name: "Libavfilter",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libavfilter.xcframework.zip",
-            checksum: "e90a74ab76b63682fda66743e595796edd5d749dddb744113fbe43264f310cee"
-        ),
-        .binaryTarget(
-            name: "Libavutil",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libavutil.xcframework.zip",
-            checksum: "fa5e16b31f630cb609555f68e2b8b27bb18ffd46ab8abba8cec726794ad79026"
-        ),
-        .binaryTarget(
-            name: "Libswresample",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libswresample.xcframework.zip",
-            checksum: "5c830657fb6e1296ca11407db84877d241bae73f120c04770e3a61c1ff586099"
-        ),
-        .binaryTarget(
-            name: "Libswscale",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libswscale.xcframework.zip",
-            checksum: "dc4c627b0f3a96c958e4560e6ebb887dfd93f97dfe2976e3fbccb00c61a4c08f"
-        ),
-
-        .binaryTarget(
-            name: "Libuchardet",
-            url: "https://github.com/mpvkit/libuchardet-build/releases/download/0.0.8-xcode/Libuchardet.xcframework.zip",
-            checksum: "503202caa0dafb6996b2443f53408a713b49f6c2d4a26d7856fd6143513a50d7"
+            name: "MPVKit_dynamic",
+            path: "Frameworks/MPVKit.xcframework"
         ),
 
         .binaryTarget(
@@ -197,11 +138,6 @@ let package = Package(
             checksum: "8e76f267ee100ff5f3bbde7641b2240566df722241cdf8e135be7ef3d29e237a"
         ),
 
-        .binaryTarget(
-            name: "Libmpv",
-            url: "https://github.com/edde746/MPVKit/releases/download/v1.0.13/Libmpv.xcframework.zip",
-            checksum: "a96c2f1b0575e5d76370797cdaf9c2aa539c1ad5e7cd12c4ecf582001c4715c3"
-        ),
-        //AUTO_GENERATE_TARGETS_END//
+//AUTO_GENERATE_TARGETS_END//
     ]
 )

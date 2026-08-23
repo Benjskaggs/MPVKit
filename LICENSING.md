@@ -65,7 +65,7 @@ FFmpeg records its licence in the binary. After building, this must print
 `LGPL version 2.1 or later`:
 
 ```bash
-strings Frameworks/Libavutil.xcframework/ios-arm64/Libavutil.framework/Libavutil \
+strings Frameworks/MPVKit.xcframework/ios-arm64/MPVKit.framework/MPVKit \
   | grep "libavutil license"
 ```
 
@@ -73,7 +73,7 @@ The same binary carries the full configure line, which must contain neither
 `--enable-gpl` nor `--enable-version3`:
 
 ```bash
-strings Frameworks/Libavutil.xcframework/ios-arm64/Libavutil.framework/Libavutil \
+strings Frameworks/MPVKit.xcframework/ios-arm64/MPVKit.framework/MPVKit \
   | grep -o '\-\-enable-[a-z0-9-]*' | sort -u
 ```
 
